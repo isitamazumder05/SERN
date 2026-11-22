@@ -36,6 +36,14 @@ class MLService:
 
     def _init_predictor(self) -> None:
         try:
+            # Compatibility shim for unpickling scikit-learn 1.6.x ColumnTransformer artifacts on newer scikit-learn (1.7+)
+            try:
+                import sklearn.compose._column_transformer as _ct
+                if not hasattr(_ct, "_RemainderColsList"):
+                    setattr(_ct, "_RemainderColsList", type("_RemainderColsList", (list,), {}))
+            except Exception:
+                pass
+
             from ml_module.predictor import AccidentPredictor
             self._predictor = AccidentPredictor()
             logger.info("AccidentPredictor successfully loaded.")

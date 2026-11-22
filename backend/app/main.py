@@ -16,6 +16,7 @@ from app.routes import (
     hospitals_router,
     notifications_router,
     routing_router,
+    coordination_router,
 )
 
 # Configure logging
@@ -82,6 +83,7 @@ app.include_router(emergencies_router, prefix="/api")
 app.include_router(hospitals_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(routing_router, prefix="/api")
+app.include_router(coordination_router, prefix="/api")
 
 
 @app.get("/")

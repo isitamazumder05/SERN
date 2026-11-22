@@ -9,10 +9,12 @@ import ProfilePage from "./ProfilePage";
 import "./ProfilePage.css";
 import ReportsPage from "./ReportsPage";
 import AnalyticsPage from "./AnalyticsPage";
+import HospitalCoordinationPage from "./components/HospitalCoordinationPage";
+import { sernApi } from "./services/sernApi";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Activity, AlertTriangle, Ambulance, Bell, Building2,
   Car, Clock, LayoutDashboard, MapPin, Menu, Navigation,
@@ -319,7 +321,11 @@ if (showForgotPassword) {
               <span className="status-dot"></span>
               System Online
             </div>
-            <button className="notification-button">
+            <button
+              className="notification-button"
+              title="Open Emergency Notifications Center"
+              onClick={() => setActivePage("Reports")}
+            >
               <Bell size={20} />
               <span className="notification-dot"></span>
             </button>
@@ -568,54 +574,9 @@ activePage === "Traffic" ? (
     </div>
   </section>
 ) : activePage === "Hospitals" ? (
-  <section className="panel">
-    <div className="panel-heading">
-      <div>
-        <h3>Hospital Management</h3>
-        <p>Monitor hospital availability and bed capacity</p>
-      </div>
-      <Building2 size={25} color="#60a5fa" />
-    </div>
-
-    <div className="hospital-cards">
-      {hospitals.map((hospital) => (
-        <div className="hospital-card" key={hospital.id}>
-          <h3>{hospital.name}</h3>
-          <p>{hospital.id}</p>
-          <p>Location: {hospital.location}</p>
-          <h2>{hospital.beds} Beds Available</h2>
-          <span>{hospital.status}</span>
-        </div>
-      ))}
-    </div>
-  </section>
+  <HospitalCoordinationPage initialTab="command" />
 ) : activePage === "Emergency History" ? (
-  <section className="panel history-page">
-    <div className="panel-heading">
-      <div>
-        <h3>Emergency History</h3>
-        <p>View previously reported emergency incidents</p>
-      </div>
-      <Clock size={25} color="#60a5fa" />
-    </div>
-
-    <div className="history-list">
-      {emergencyHistory.map((emergency) => (
-        <div className="history-card" key={emergency.id}>
-          <div>
-            <h3>{emergency.type}</h3>
-            <p>{emergency.id}</p>
-            <p>Location: {emergency.location}</p>
-            <small>{emergency.date} · {emergency.time}</small>
-          </div>
-
-          <span className="history-status">
-            {emergency.status}
-          </span>
-        </div>
-      ))}
-    </div>
-  </section>
+  <HospitalCoordinationPage initialTab="lifecycle" />
 ) : activePage === "Reports" ? (
   <ReportsPage />
 ) : activePage === "Analytics" ? (
