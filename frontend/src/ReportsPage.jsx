@@ -1,4 +1,3 @@
-import { Activity, FileText } from "lucide-react";
 import HospitalCoordinationPage from "./components/HospitalCoordinationPage";
 
 function ReportsPage({ onSystemDataUpdated }) {

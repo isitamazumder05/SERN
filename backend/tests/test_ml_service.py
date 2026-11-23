@@ -92,4 +92,37 @@ def test_real_ml_model_integration():
     }
     crash_result = real_svc.predict(crash_reading)
     assert crash_result["accident_detected"] is True
+    assert crash_result["accident_probability"] >= crash_result["threshold"]
+    assert abs(crash_result["threshold"] - 0.33567089961170193) < 1e-6
+
+
+def test_sklearn_compatibility_shim_and_direct_predictor():
+    """
+    Verify the scikit-learn compatibility workaround (_RemainderColsList shim)
+    and test direct AccidentPredictor loading and prediction across vehicle types.
+    """
+    import sklearn.compose._column_transformer as _ct
+
+    MLService._apply_sklearn_compat_shim()
+    assert hasattr(_ct, "_RemainderColsList")
+    assert issubclass(_ct._RemainderColsList, list)
+
+    from ml_module.predictor import AccidentPredictor
+
+    predictor = AccidentPredictor()
+    assert predictor.model is not None
+    assert len(predictor.feature_columns) == 29
+
+    for vehicle_type in ["car", "van", "truck"]:
+        sample = {
+            "gsensor": [[48.0, 39.0, 78.0], [62.0, 51.0, 88.0]],
+            "gyro": [[5.2, 6.1, 7.4], [8.1, 9.0, 10.2]],
+            "gps_speed": [85.0, 0.0],
+            "vehiclesize": vehicle_type,
+            "gyro_is_hd": True,
+        }
+        res = predictor.predict(sample)
+        assert set(res.keys()) == {"accident_detected", "accident_probability", "threshold"}
+        assert res["accident_detected"] is True
+        assert 0.0 <= res["accident_probability"] <= 1.0
 

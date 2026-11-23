@@ -24,25 +24,33 @@ def test_e2e_hospital_coordination_full_lifecycle(client):
     assert case is not None
     em_id = case["id"]
 
-    # Verify ML and Patient Triage details
+    # Verify ML and Experimental Sensor Severity / Demo Placeholder Contacts details
     assert case["accident"]["accident_prediction"] is True
     assert case["patient_details"]["triage_level"] in {"CRITICAL", "HIGH"}
+    assert case["patient_details"]["severity_classification_type"] == "EXPERIMENTAL_SENSOR_INDICATOR"
+    assert "not clinically validated medical triage" in case["patient_details"]["severity_disclaimer"].lower()
     assert case["patient_details"]["peak_g_force"] > 50.0
     assert case["patient_details"]["speed_drop_kmh"] >= 50.0
+    assert case["patient_details"]["contacts_are_demo_placeholders"] is True
     assert len(case["patient_details"]["registered_contacts"]) >= 2
+    assert all(c["is_demo_placeholder"] is True for c in case["patient_details"]["registered_contacts"])
 
-    # Verify Ambulance dispatched & Hospital assigned & Route ETA calculated
+    # Verify Ambulance dispatched & Hospital assigned & Simulated Route ETA calculated
     assert case["status"] == "DISPATCHED"
     assert case["assigned_ambulance"] is not None
     assert case["hospital"] is not None
     assert case["eta_minutes"] is not None and case["eta_minutes"] > 0
     assert case["distance_km"] is not None and case["distance_km"] > 0
+    assert case["is_route_simulated"] is True
+    assert "simulated" in case["route_type_label"].lower()
 
-    # Verify notifications generated (DISPATCH_NOTICE, HOSPITAL_ALERT, EMERGENCY_CONTACT)
+    # Verify notifications generated (DISPATCH_NOTICE, HOSPITAL_ALERT, EMERGENCY_CONTACT) and labeled simulated
     notif_types = {n["notification_type"] for n in case["notifications"]}
     assert "DISPATCH_NOTICE" in notif_types
     assert "HOSPITAL_ALERT" in notif_types
     assert "EMERGENCY_CONTACT" in notif_types
+    assert all(n["is_simulated"] is True for n in case["notifications"])
+    assert all(n["delivery_status"] == "SIMULATED_DELIVERED" for n in case["notifications"])
 
     # 2. Progress lifecycle: DISPATCHED -> EN_ROUTE -> AT_SCENE -> TRANSPORTING -> COMPLETED
     for next_stage in ["EN_ROUTE", "AT_SCENE", "TRANSPORTING"]:
@@ -71,10 +79,14 @@ def test_e2e_hospital_coordination_full_lifecycle(client):
     assert comp_resp.status_code == 200
     assert comp_resp.json()["status"] == "COMPLETED"
 
-    # Verify all 6 lifecycle stages are now COMPLETED
+    # Verify all 6 lifecycle stages are now COMPLETED and have valid timestamps
     final_case = client.get(f"/api/coordination/emergencies/{em_id}").json()
     assert final_case["status"] == "COMPLETED"
     assert all(s["status"] == "COMPLETED" for s in final_case["lifecycle_stages"])
+    assert all(s["timestamp"] is not None for s in final_case["lifecycle_stages"])
+    stage_by_key = {s["stage_key"]: s for s in final_case["lifecycle_stages"]}
+    assert stage_by_key["AMBULANCE_DISPATCHED"]["timestamp"] == final_case["assignments"][0]["assignment_timestamp"]
+    assert stage_by_key["HOSPITAL_ARRIVAL"]["timestamp"] == final_case["completion_timestamp"]
 
 
 def test_normal_driving_simulation_safeguard(client):
@@ -154,8 +166,19 @@ def test_registered_contact_and_hospital_pre_arrival_notifications(client):
 
 def test_coordination_analytics_and_seed_demo(client):
     """
-    Verify seeding realistic multi-stage demo data and analytics aggregation.
+    Verify empty-state analytics (no hardcoded fallback numbers), explicit demo seeding,
+    and simulated vs. actual Member 4 route distinction.
     """
+    # 1. Verify empty state before any demo seeding (no hardcoded 11.4, 7.2, or 4.8 values)
+    empty_analytics = client.get("/api/coordination/analytics").json()
+    assert empty_analytics["total_emergencies"] == 0
+    assert empty_analytics["avg_eta_minutes"] is None
+    assert empty_analytics["avg_distance_km"] is None
+    assert empty_analytics["avg_resolution_minutes"] is None
+    assert empty_analytics["simulated_routes_count"] == 0
+    assert empty_analytics["actual_member4_routes_count"] == 0
+
+    # 2. Explicitly seed demo data via /api/coordination/seed-demo
     seed_resp = client.post("/api/coordination/seed-demo")
     assert seed_resp.status_code == 200
     seed_data = seed_resp.json()
@@ -167,7 +190,7 @@ def test_coordination_analytics_and_seed_demo(client):
     assert seed_again.status_code == 200
     assert seed_again.json()["seeded"] is False
 
-    # Verify analytics endpoint
+    # 3. Verify analytics endpoint after explicit seeding
     analytics_resp = client.get("/api/coordination/analytics")
     assert analytics_resp.status_code == 200
     summary = analytics_resp.json()
@@ -181,4 +204,62 @@ def test_coordination_analytics_and_seed_demo(client):
     assert summary["total_notifications_sent"] >= 6
     assert summary["hospital_alerts_count"] >= 3
     assert summary["contact_alerts_count"] >= 3
+    assert summary["avg_eta_minutes"] is not None and summary["avg_eta_minutes"] > 0
+    assert summary["avg_distance_km"] is not None and summary["avg_distance_km"] > 0
+    assert summary["avg_resolution_minutes"] is not None and summary["avg_resolution_minutes"] > 0
+    assert summary["simulated_routes_count"] >= 3
+    assert summary["actual_member4_routes_count"] == 0
     assert len(summary["hospital_load_breakdown"]) >= 4
+
+
+def test_member4_routing_distinction_simulated_vs_actual(client):
+    """
+    Verify that simulated fallback routes and actual Member 4 road-network routes
+    are clearly distinguished in CoordinatedEmergencyCase and analytics.
+    """
+    sim_resp = client.post(
+        "/api/coordination/simulate",
+        json={
+            "scenario_type": "HIGH_IMPACT_HIGHWAY_CRASH",
+            "auto_validate": True,
+            "auto_dispatch": True,
+            "auto_assign_hospital": True,
+            "auto_calculate_route": True,
+        },
+    )
+    assert sim_resp.status_code == 201
+    case_sim = sim_resp.json()["coordinated_emergency"]
+    em_id = case_sim["id"]
+
+    # Initially uses a simulated route estimate
+    assert case_sim["is_route_simulated"] is True
+    assert case_sim["route_source"] == "SIMULATED_E2E_ROUTE_ESTIMATE"
+    assert "simulated" in case_sim["route_type_label"].lower()
+
+    # Now Member 4 pushes an actual OSMnx road-network route via POST /api/routing/{em_id}
+    m4_resp = client.post(
+        f"/api/routing/{em_id}",
+        json={
+            "emergency_id": em_id,
+            "distance_km": 4.2,
+            "estimated_duration_minutes": 6.1,
+            "source": "MEMBER_4_OSMNX_ROUTING",
+            "route_geometry": {
+                "type": "LineString",
+                "coordinates": [[77.5946, 12.9716], [77.6476, 12.9592]],
+            },
+        },
+    )
+    assert m4_resp.status_code == 201
+
+    # Verify CoordinatedEmergencyCase now reports actual Member 4 routing (is_route_simulated=False)
+    case_actual = client.get(f"/api/coordination/emergencies/{em_id}").json()
+    assert case_actual["is_route_simulated"] is False
+    assert case_actual["route_source"] == "MEMBER_4_OSMNX_ROUTING"
+    assert "actual member 4" in case_actual["route_type_label"].lower()
+    assert case_actual["distance_km"] == 4.2
+    assert case_actual["eta_minutes"] == 6.1
+
+    analytics = client.get("/api/coordination/analytics").json()
+    assert analytics["actual_member4_routes_count"] == 1
+    assert analytics["simulated_routes_count"] == 0

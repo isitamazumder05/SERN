@@ -9,8 +9,27 @@ from app.schemas.notification import NotificationResponse
 from app.schemas.routing import RouteResponse
 
 
+class DemoContactPlaceholder(BaseModel):
+    name: str
+    relationship: str
+    contact: str
+    is_demo_placeholder: bool = Field(default=True, description="Indicates placeholder demo contact data")
+    data_label: str = Field(default="DEMO PLACEHOLDER CONTACT", description="Explicit label distinguishing placeholder from real registered contacts")
+
+
 class PatientEmergencyDetails(BaseModel):
-    triage_level: str = Field(..., description="Derived clinical triage classification (CRITICAL, HIGH, MODERATE)")
+    triage_level: str = Field(
+        ...,
+        description="Experimental sensor-derived severity indicator (CRITICAL, HIGH, MODERATE) — not clinically validated medical triage",
+    )
+    severity_classification_type: str = Field(
+        default="EXPERIMENTAL_SENSOR_INDICATOR",
+        description="Clarifies that severity level is an experimental kinematics indicator, not clinical medical triage",
+    )
+    severity_disclaimer: str = Field(
+        default="Experimental sensor-derived severity indicator (based on accelerometer G-force, Δv speed drop & ML probability) — not clinically validated medical triage.",
+        description="Explicit medical triage disclaimer",
+    )
     accident_probability: float
     model_threshold: float
     vehicle_size: str
@@ -20,7 +39,14 @@ class PatientEmergencyDetails(BaseModel):
     speed_drop_kmh: float
     incident_coordinates: str
     validation_notes: Optional[str] = None
-    registered_contacts: List[Dict[str, str]] = []
+    registered_contacts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Demo placeholder contacts clearly labeled as non-real demo data",
+    )
+    contacts_are_demo_placeholders: bool = Field(
+        default=True,
+        description="True when contacts are hardcoded demo placeholders rather than real registered patient contacts",
+    )
 
 
 class LifecycleStageItem(BaseModel):
@@ -42,6 +68,14 @@ class CoordinatedEmergencyCase(BaseModel):
     eta_minutes: Optional[float] = None
     distance_km: Optional[float] = None
     route_source: Optional[str] = None
+    is_route_simulated: bool = Field(
+        default=True,
+        description="True if route/ETA is a Haversine estimate or simulated/mock fallback; False only when calculated by Member 4's actual road-network routing module",
+    )
+    route_type_label: str = Field(
+        default="Unassigned / Pending Route",
+        description="Human-readable label distinguishing simulated/estimated routes from actual Member 4 road-network routing",
+    )
 
     accident: Optional[AccidentResponse] = None
     assigned_ambulance: Optional[AmbulanceResponse] = None
@@ -74,9 +108,11 @@ class CoordinationAnalyticsSummary(BaseModel):
     hospital_alerts_count: int
     contact_alerts_count: int
     dispatch_notices_count: int
-    avg_eta_minutes: float
-    avg_distance_km: float
-    avg_resolution_minutes: float
+    avg_eta_minutes: Optional[float] = None
+    avg_distance_km: Optional[float] = None
+    avg_resolution_minutes: Optional[float] = None
+    simulated_routes_count: int = 0
+    actual_member4_routes_count: int = 0
     status_breakdown: Dict[str, int]
     hospital_load_breakdown: List[Dict[str, Any]]
     notification_type_breakdown: Dict[str, int]

@@ -1,4 +1,3 @@
-import { Activity, TrendingUp } from "lucide-react";
 import HospitalCoordinationPage from "./components/HospitalCoordinationPage";
 import "./AnalyticsPage.css";
 

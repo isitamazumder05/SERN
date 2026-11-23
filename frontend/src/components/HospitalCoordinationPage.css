@@ -48,6 +48,125 @@
   border-radius: 99px;
 }
 
+.hcp-integration-pill.pill-disconnected {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.hcp-integration-pill.pill-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.hcp-disclaimer-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: rgba(245, 158, 11, 0.11);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fde68a;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 10px 13px;
+  border-radius: 9px;
+  margin-bottom: 13px;
+}
+
+.hcp-disclaimer-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #fbbf24;
+}
+
+.hcp-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.hcp-empty-inline {
+  padding: 18px 14px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+  background: #10192b;
+  border: 1px dashed #28364e;
+  border-radius: 10px;
+}
+
+.hcp-form-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hcp-form-header-row h4 {
+  margin-bottom: 0;
+}
+
+.hcp-form-subnote {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+.hcp-demo-data-pill,
+.hcp-sim-pill,
+.hcp-route-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.hcp-route-tag.tag-actual,
+.eta-actual .hcp-route-tag {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.35);
+}
+
+.hcp-eta-badge.eta-actual {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(74, 222, 128, 0.35);
+  color: #4ade80;
+}
+
+.hcp-eta-banner.banner-simulated {
+  background: rgba(245, 158, 11, 0.11);
+  border-color: rgba(251, 191, 36, 0.32);
+}
+
+.hcp-eta-banner.banner-simulated small {
+  color: #fcd34d;
+}
+
+.hcp-eta-banner.banner-actual {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(74, 222, 128, 0.32);
+}
+
+.hcp-eta-banner.banner-actual small {
+  color: #4ade80;
+}
+
+.hcp-sub-route-type {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
 .hcp-title-block h2 {
   font-size: 21px;
   color: #f8fafc;

@@ -1,7 +1,7 @@
 from datetime import datetime
 import logging
 import math
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.accident import Accident
@@ -37,11 +37,36 @@ from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger("sern.coordination")
 
-DEFAULT_REGISTERED_CONTACTS = [
-    {"name": "Ananya Sharma (Spouse / Primary ICE)", "relationship": "Spouse", "contact": "+91-98450-11223"},
-    {"name": "Rajesh Verma (Parent / Secondary ICE)", "relationship": "Parent", "contact": "+91-98860-44556"},
-    {"name": "Bengaluru Traffic Police Control Room", "relationship": "First Responder", "contact": "112 / BTP-CTRL"},
+DEMO_PLACEHOLDER_CONTACTS = [
+    {
+        "name": "Demo Contact 1 — Ananya Sharma (Placeholder)",
+        "relationship": "Spouse (Demo Placeholder)",
+        "contact": "+91-00000-11223 (Demo)",
+        "is_demo_placeholder": True,
+        "data_label": "DEMO PLACEHOLDER — NOT A REAL REGISTERED CONTACT",
+    },
+    {
+        "name": "Demo Contact 2 — Rajesh Verma (Placeholder)",
+        "relationship": "Parent (Demo Placeholder)",
+        "contact": "+91-00000-44556 (Demo)",
+        "is_demo_placeholder": True,
+        "data_label": "DEMO PLACEHOLDER — NOT A REAL REGISTERED CONTACT",
+    },
+    {
+        "name": "Demo Responder — Traffic Control Desk (Placeholder)",
+        "relationship": "First Responder (Demo Placeholder)",
+        "contact": "112-DEMO-CTRL",
+        "is_demo_placeholder": True,
+        "data_label": "DEMO PLACEHOLDER — NOT A REAL REGISTERED CONTACT",
+    },
 ]
+
+SIMULATED_ROUTE_SOURCES = {
+    "HAVERSINE_ESTIMATE",
+    "SIMULATED_HAVERSINE_FALLBACK",
+    "SIMULATED_E2E_ROUTE_ESTIMATE",
+    "MEMBER_4_ROUTING_MOCK_DEV",
+}
 
 
 class CoordinationService:
@@ -50,6 +75,26 @@ class CoordinationService:
     Coordinates Frontend, Backend, AI/ML (Member 3) and Routing (Member 4) modules without
     encroaching on their internal contracts.
     """
+
+    @staticmethod
+    def _is_simulated_route_source(source: Optional[str]) -> bool:
+        if not source:
+            return True
+        s_upper = source.upper()
+        if s_upper in SIMULATED_ROUTE_SOURCES:
+            return True
+        return any(token in s_upper for token in ("MOCK", "SIMULATED", "ESTIMATE", "FALLBACK", "DEMO"))
+
+    @classmethod
+    def _classify_route_source(cls, source: Optional[str]) -> Tuple[bool, str]:
+        if not source:
+            return True, "No Route Calculated"
+        is_sim = cls._is_simulated_route_source(source)
+        if is_sim:
+            if "HAVERSINE" in source.upper():
+                return True, "Simulated Route & ETA (Haversine Fallback Estimate — Not Member 4 Road Routing)"
+            return True, f"Simulated / Mock Route & ETA ({source} — Awaiting Member 4 Road-Network Module)"
+        return False, f"Actual Member 4 Road-Network Route ({source})"
 
     @staticmethod
     def _extract_patient_details(accident: Optional[Accident], emergency_id: int) -> Optional[PatientEmergencyDetails]:
@@ -72,6 +117,7 @@ class CoordinationService:
         speed_drop = max(0.0, peak_speed - min_speed)
 
         prob = float(accident.accident_probability or 0.0)
+        # Experimental sensor-derived severity indicator (NOT clinically validated medical triage)
         if prob >= 0.70 or peak_g >= 80.0 or speed_drop >= 65.0:
             triage_level = "CRITICAL"
         elif prob >= 0.40 or peak_g >= 45.0 or speed_drop >= 35.0:
@@ -79,12 +125,17 @@ class CoordinationService:
         else:
             triage_level = "MODERATE"
 
-        # Deterministic contact pair per emergency ID for realistic display
-        c1 = DEFAULT_REGISTERED_CONTACTS[emergency_id % len(DEFAULT_REGISTERED_CONTACTS)]
-        c2 = DEFAULT_REGISTERED_CONTACTS[(emergency_id + 1) % len(DEFAULT_REGISTERED_CONTACTS)]
+        # Deterministic demo placeholder contact pair per emergency ID (explicitly labeled as demo data)
+        c1 = DEMO_PLACEHOLDER_CONTACTS[emergency_id % len(DEMO_PLACEHOLDER_CONTACTS)]
+        c2 = DEMO_PLACEHOLDER_CONTACTS[(emergency_id + 1) % len(DEMO_PLACEHOLDER_CONTACTS)]
 
         return PatientEmergencyDetails(
             triage_level=triage_level,
+            severity_classification_type="EXPERIMENTAL_SENSOR_INDICATOR",
+            severity_disclaimer=(
+                "Experimental sensor-derived severity indicator (based on accelerometer G-force, Δv speed drop & ML probability) "
+                "— NOT clinically validated medical triage."
+            ),
             accident_probability=round(prob, 4),
             model_threshold=round(float(accident.model_threshold or 0.3356), 4),
             vehicle_size=accident.vehicle_size or "car",
@@ -94,11 +145,12 @@ class CoordinationService:
             speed_drop_kmh=round(speed_drop, 1),
             incident_coordinates=f"{accident.latitude:.4f}° N, {accident.longitude:.4f}° E",
             validation_notes=accident.validation_notes,
-            registered_contacts=[c1, c2]
+            registered_contacts=[c1, c2],
+            contacts_are_demo_placeholders=True,
         )
 
-    @staticmethod
-    def _build_lifecycle_stages(emergency: Emergency) -> List[LifecycleStageItem]:
+    @classmethod
+    def _build_lifecycle_stages(cls, emergency: Emergency) -> List[LifecycleStageItem]:
         """
         Builds the 6-stage emergency lifecycle tracker from accident detection to hospital arrival.
         Stages:
@@ -125,14 +177,37 @@ class CoordinationService:
         assign_time = (
             emergency.assignments[0].assignment_timestamp
             if emergency.assignments
-            else emergency.updated_at
+            else None
         )
+        route_time = emergency.route.updated_at if emergency.route else None
+        hosp_notifs = [
+            n.timestamp
+            for n in (emergency.notifications or [])
+            if n.notification_type == "HOSPITAL_ALERT" and n.timestamp is not None
+        ]
+        hosp_alert_time = min(hosp_notifs) if hosp_notifs else None
+
+        en_route_time = None
+        if current_rank == 4:
+            en_route_time = route_time or emergency.updated_at
+        elif current_rank > 4:
+            # Use distinct recorded route or assignment timestamp when available instead of cloning final updated_at
+            en_route_time = route_time or assign_time or emergency.created_at
+
+        transport_time = None
+        if current_rank == 5:
+            transport_time = hosp_alert_time or emergency.updated_at
+        elif current_rank > 5:
+            transport_time = hosp_alert_time or route_time or assign_time or emergency.updated_at
+
         hosp_name = emergency.hospital.name if emergency.hospital else "Trauma Center"
         amb_reg = (
             emergency.assigned_ambulance.registration_number
             if emergency.assigned_ambulance
             else "Unassigned"
         )
+        is_sim_route = cls._is_simulated_route_source(emergency.route.source if emergency.route else None)
+        route_stage_prefix = "Simulated Route/ETA" if is_sim_route else "Member 4 Road Route"
 
         raw_stages = [
             (
@@ -164,28 +239,28 @@ class CoordinationService:
             (
                 4,
                 "EN_ROUTE_TO_SCENE",
-                "En Route & Corridor Active",
+                "En Route & Routing Boundary",
                 (
-                    f"Route calculated: {emergency.route.distance_km:.1f} km · ETA {emergency.route.estimated_duration_minutes:.1f} min"
+                    f"{route_stage_prefix}: {emergency.route.distance_km:.1f} km · ETA {emergency.route.estimated_duration_minutes:.1f} min (Source: {emergency.route.source})"
                     if emergency.route
-                    else "Ambulance en route to incident coordinates"
+                    else "Ambulance en route to incident coordinates (awaiting Member 4 route calculation)"
                 ),
-                emergency.updated_at if current_rank >= 4 else None,
+                en_route_time if current_rank >= 4 else None,
                 "Member 4 · Routing Boundary",
             ),
             (
                 5,
                 "TRANSPORTING_TO_HOSPITAL",
                 f"On Scene / Inbound to {hosp_name}",
-                f"Patient triaged & transporting to {hosp_name} with pre-arrival alert",
-                emergency.updated_at if current_rank >= 5 else None,
+                f"Patient transporting to {hosp_name} with recorded pre-arrival notification",
+                transport_time if current_rank >= 5 else None,
                 "Member 5 · Hospital Coordination",
             ),
             (
                 6,
                 "HOSPITAL_ARRIVAL",
                 "Hospital Arrival & Handover",
-                f"Patient arrived at {hosp_name}; trauma handover completed & unit freed",
+                f"Patient arrived at {hosp_name}; handover completed & unit freed",
                 emergency.completion_timestamp if current_rank >= 6 else None,
                 "Member 5 · Trauma Reception",
             ),
@@ -242,6 +317,8 @@ class CoordinationService:
             eta_minutes = round(max(2.0, (distance_km / 42.0) * 60.0), 1)
             route_source = "HAVERSINE_ESTIMATE"
 
+        is_route_simulated, route_type_label = cls._classify_route_source(route_source)
+
         acc_resp = None
         if accident:
             acc_resp = AccidentResponse(
@@ -273,6 +350,8 @@ class CoordinationService:
             eta_minutes=eta_minutes,
             distance_km=distance_km,
             route_source=route_source,
+            is_route_simulated=is_route_simulated,
+            route_type_label=route_type_label,
             accident=acc_resp,
             assigned_ambulance=AmbulanceResponse.model_validate(ambulance) if ambulance else None,
             hospital=HospitalResponse.model_validate(hospital) if hospital else None,
@@ -349,23 +428,26 @@ class CoordinationService:
         avg_eta = (
             round(sum(r.estimated_duration_minutes for r in routes) / len(routes), 1)
             if routes
-            else 0.0
+            else None
         )
         avg_dist = (
             round(sum(r.distance_km for r in routes) / len(routes), 2)
             if routes
-            else 0.0
+            else None
         )
+
+        simulated_routes_count = sum(1 for r in routes if cls._is_simulated_route_source(r.source))
+        actual_member4_routes_count = sum(1 for r in routes if not cls._is_simulated_route_source(r.source))
 
         resolution_durations = []
         for em in emergencies:
             if em.status == "COMPLETED" and em.completion_timestamp and em.created_at:
-                diff_min = max(1.0, (em.completion_timestamp - em.created_at).total_seconds() / 60.0)
+                diff_min = max(0.1, (em.completion_timestamp - em.created_at).total_seconds() / 60.0)
                 resolution_durations.append(diff_min)
         avg_resolution = (
             round(sum(resolution_durations) / len(resolution_durations), 1)
             if resolution_durations
-            else 11.4
+            else None
         )
 
         hospital_load = []
@@ -406,6 +488,8 @@ class CoordinationService:
             avg_eta_minutes=avg_eta,
             avg_distance_km=avg_dist,
             avg_resolution_minutes=avg_resolution,
+            simulated_routes_count=simulated_routes_count,
+            actual_member4_routes_count=actual_member4_routes_count,
             status_breakdown=status_breakdown,
             hospital_load_breakdown=hospital_load,
             notification_type_breakdown=notif_breakdown,
@@ -439,7 +523,7 @@ class CoordinationService:
         )
 
         msg = req.custom_message or (
-            f"[SERN EMERGENCY CONTACT ALERT] Crash detected involving registered vehicle near {coords}. "
+            f"[SIMULATED EMERGENCY CONTACT ALERT] Crash detected involving vehicle near {coords}. "
             f"Case EMG-{1000 + emergency.id} status: {emergency.status}.{amb_info}{hosp_info}{eta_info}"
         )
 
@@ -491,8 +575,9 @@ class CoordinationService:
                             [mid_lon, mid_lat],
                             [hospital.longitude, hospital.latitude],
                         ],
+                        "_note": "Simulated Haversine fallback route estimate; not calculated by Member 4 road-network module.",
                     },
-                    source="MEMBER_4_ROUTING_CORRIDOR",
+                    source="SIMULATED_HAVERSINE_FALLBACK",
                 ),
             )
             db.refresh(emergency)
@@ -516,8 +601,8 @@ class CoordinationService:
             recipient=f"{hospital.name} Trauma Bay ({hospital.contact_information})",
             notification_type="HOSPITAL_ALERT",
             message=(
-                f"[PRE-ARRIVAL TRAUMA BRIEF] Inbound {triage_str} priority patient via {amb_str} "
-                f"for Case EMG-{1000 + emergency.id}. Peak Impact: {peak_g_str}. ETA: {eta_val:.1f} min.{notes_part}"
+                f"[SIMULATED PRE-ARRIVAL BRIEF] Inbound patient (Experimental Sensor Severity: {triage_str}) via {amb_str} "
+                f"for Case EMG-{1000 + emergency.id}. Peak Impact: {peak_g_str}. Simulated/Est. ETA: {eta_val:.1f} min.{notes_part}"
             ),
             emergency_id=emergency.id,
             hospital_id=hospital.id,
@@ -530,7 +615,7 @@ class CoordinationService:
                 recipient=f"{primary['name']} ({primary['contact']})",
                 notification_type="EMERGENCY_CONTACT",
                 message=(
-                    f"[SERN FAMILY NOTIFICATION] Patient for Case EMG-{1000 + emergency.id} is being "
+                    f"[SIMULATED DEMO CONTACT NOTIFICATION] Patient for Case EMG-{1000 + emergency.id} is being "
                     f"coordinated with {hospital.name} ({hospital.address}). Estimated arrival: {eta_val:.1f} mins."
                 ),
                 emergency_id=emergency.id,
@@ -786,8 +871,9 @@ class CoordinationService:
                                     [mid_lon, mid_lat],
                                     [nearest_hosp.longitude, nearest_hosp.latitude],
                                 ],
+                                "_note": "Simulated E2E route estimate; replace via POST /api/routing/{emergency_id} from Member 4 module.",
                             },
-                            source="MEMBER_4_GREEN_CORRIDOR_ROUTING",
+                            source="SIMULATED_E2E_ROUTE_ESTIMATE",
                         ),
                     )
 

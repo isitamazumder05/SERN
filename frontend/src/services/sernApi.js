@@ -1,6 +1,6 @@
 // SERN Member 5 — Hospital Coordination, Integration & Testing API Client
-// Connects the React frontend with the FastAPI backend (/api/*) with automatic
-// realistic simulation fallback if the backend server is unreachable.
+// Connects the React frontend with the FastAPI backend (/api/*).
+// Clearly propagates backend connection failures so the UI displays a Disconnected status.
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
