@@ -9,10 +9,12 @@ import ProfilePage from "./ProfilePage";
 import "./ProfilePage.css";
 import ReportsPage from "./ReportsPage";
 import AnalyticsPage from "./AnalyticsPage";
+import HospitalCoordinationPage from "./components/HospitalCoordinationPage";
+import { sernApi } from "./services/sernApi";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Activity, AlertTriangle, Ambulance, Bell, Building2,
   Car, Clock, LayoutDashboard, MapPin, Menu, Navigation,
@@ -42,55 +44,6 @@ const ambulances = [
   { id: "AMB-01", location: "MG Road", status: "Dispatched" },
   { id: "AMB-02", location: "Indiranagar", status: "Available" },
   { id: "AMB-03", location: "Whitefield", status: "Available" },
-];
-const hospitals = [
-  {
-    id: "HSP-01",
-    name: "City Hospital",
-    location: "MG Road, Bengaluru",
-    beds: 12,
-    status: "Available",
-  },
-  {
-    id: "HSP-02",
-    name: "Apollo Hospital",
-    location: "Bannerghatta Road, Bengaluru",
-    beds: 5,
-    status: "Limited",
-  },
-  {
-    id: "HSP-03",
-    name: "Manipal Hospital",
-    location: "Whitefield, Bengaluru",
-    beds: 0,
-    status: "Full",
-  },
-];
-const emergencyHistory = [
-  {
-    id: "EMG-1021",
-    type: "Road Accident",
-    location: "MG Road",
-    date: "21 Nov 2026",
-    time: "10:30 AM",
-    status: "Resolved",
-  },
-  {
-    id: "EMG-1020",
-    type: "Vehicle Collision",
-    location: "Indiranagar",
-    date: "21 Nov 2026",
-    time: "09:45 AM",
-    status: "Resolved",
-  },
-  {
-    id: "EMG-1019",
-    type: "Medical Emergency",
-    location: "Whitefield",
-    date: "20 Nov 2026",
-    time: "08:15 PM",
-    status: "Completed",
-  },
 ];
 
 
@@ -192,6 +145,38 @@ function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [backendHealth, setBackendHealth] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    sernApi
+      .checkHealth()
+      .then((res) => {
+        if (active) setBackendHealth(res);
+      })
+      .catch((err) => {
+        if (active) {
+          setBackendHealth({
+            status: "disconnected",
+            database: "disconnected",
+            ml_model_loaded: false,
+            error: err.message,
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSystemDataUpdated = useCallback((data) => {
+    if (data?.health) {
+      setBackendHealth(data.health);
+    }
+  }, []);
+
+  const isBackendDisconnected = !backendHealth || backendHealth.status === "disconnected";
+  const isBackendHealthy = backendHealth?.status === "healthy";
 
   const stats = [
     { title: "Total Accidents", value: "128", change: "+12% this week", icon: Car, color: "blue" },
@@ -289,11 +274,17 @@ if (showForgotPassword) {
           })}
         </nav>
 
-        <div className="sidebar-bottom">
+        <div className={`sidebar-bottom ${isBackendDisconnected ? "status-disconnected" : ""}`}>
           <ShieldCheck size={20} />
           <div>
-            <strong>System Protected</strong>
-            <span>All services operational</span>
+            <strong>{isBackendDisconnected ? "Backend Disconnected" : "System Protected"}</strong>
+            <span>
+              {isBackendDisconnected
+                ? "API unavailable — check backend server"
+                : isBackendHealthy
+                ? "All services operational"
+                : "Backend degraded"}
+            </span>
           </div>
         </div>
       </aside>
@@ -315,11 +306,22 @@ if (showForgotPassword) {
           </div>
 
           <div className="topbar-right">
-            <div className="system-status">
-              <span className="status-dot"></span>
-              System Online
+            <div
+              className={`system-status ${isBackendDisconnected ? "status-disconnected" : ""}`}
+              title={
+                isBackendDisconnected
+                  ? "Backend API is unreachable"
+                  : `Backend status: ${backendHealth?.status}`
+              }
+            >
+              <span className={`status-dot ${isBackendDisconnected ? "dot-disconnected" : ""}`}></span>
+              {isBackendDisconnected ? "Backend Disconnected" : "System Online"}
             </div>
-            <button className="notification-button">
+            <button
+              className="notification-button"
+              title="Open Emergency Notifications Center"
+              onClick={() => setActivePage("Reports")}
+            >
               <Bell size={20} />
               <span className="notification-dot"></span>
             </button>
@@ -345,8 +347,9 @@ if (showForgotPassword) {
               <h1>Emergency Command Center</h1>
               <p>Monitor emergencies and coordinate rapid response operations.</p>
             </div>
-            <div className="live-indicator">
-              <span className="status-dot"></span> LIVE MONITORING
+            <div className={`live-indicator ${isBackendDisconnected ? "status-disconnected" : ""}`}>
+              <span className={`status-dot ${isBackendDisconnected ? "dot-disconnected" : ""}`}></span>{" "}
+              {isBackendDisconnected ? "BACKEND DISCONNECTED" : "LIVE MONITORING"}
             </div>
           </section>
 
@@ -568,58 +571,13 @@ activePage === "Traffic" ? (
     </div>
   </section>
 ) : activePage === "Hospitals" ? (
-  <section className="panel">
-    <div className="panel-heading">
-      <div>
-        <h3>Hospital Management</h3>
-        <p>Monitor hospital availability and bed capacity</p>
-      </div>
-      <Building2 size={25} color="#60a5fa" />
-    </div>
-
-    <div className="hospital-cards">
-      {hospitals.map((hospital) => (
-        <div className="hospital-card" key={hospital.id}>
-          <h3>{hospital.name}</h3>
-          <p>{hospital.id}</p>
-          <p>Location: {hospital.location}</p>
-          <h2>{hospital.beds} Beds Available</h2>
-          <span>{hospital.status}</span>
-        </div>
-      ))}
-    </div>
-  </section>
+  <HospitalCoordinationPage initialTab="command" onSystemDataUpdated={handleSystemDataUpdated} />
 ) : activePage === "Emergency History" ? (
-  <section className="panel history-page">
-    <div className="panel-heading">
-      <div>
-        <h3>Emergency History</h3>
-        <p>View previously reported emergency incidents</p>
-      </div>
-      <Clock size={25} color="#60a5fa" />
-    </div>
-
-    <div className="history-list">
-      {emergencyHistory.map((emergency) => (
-        <div className="history-card" key={emergency.id}>
-          <div>
-            <h3>{emergency.type}</h3>
-            <p>{emergency.id}</p>
-            <p>Location: {emergency.location}</p>
-            <small>{emergency.date} · {emergency.time}</small>
-          </div>
-
-          <span className="history-status">
-            {emergency.status}
-          </span>
-        </div>
-      ))}
-    </div>
-  </section>
+  <HospitalCoordinationPage initialTab="lifecycle" onSystemDataUpdated={handleSystemDataUpdated} />
 ) : activePage === "Reports" ? (
-  <ReportsPage />
+  <ReportsPage onSystemDataUpdated={handleSystemDataUpdated} />
 ) : activePage === "Analytics" ? (
-  <AnalyticsPage />
+  <AnalyticsPage onSystemDataUpdated={handleSystemDataUpdated} />
 ) : activePage === "Profile" ? (
   <ProfilePage />
 ) : (
@@ -649,7 +607,10 @@ activePage === "Traffic" ? (
 
           <footer className="footer">
             <span>© 2026 SERN – Smart Emergency Response Network</span>
-            <span><span className="status-dot"></span> All systems operational</span>
+            <span>
+              <span className={`status-dot ${isBackendDisconnected ? "dot-disconnected" : ""}`}></span>{" "}
+              {isBackendDisconnected ? "Backend API disconnected" : "All systems operational"}
+            </span>
           </footer>
         </div>
       </main>

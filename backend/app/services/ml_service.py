@@ -36,6 +36,9 @@ class MLService:
 
     def _init_predictor(self) -> None:
         try:
+            # Compatibility shim for unpickling scikit-learn 1.6.x ColumnTransformer artifacts on newer scikit-learn (1.7+)
+            self._apply_sklearn_compat_shim()
+
             from ml_module.predictor import AccidentPredictor
             self._predictor = AccidentPredictor()
             logger.info("AccidentPredictor successfully loaded.")
@@ -43,6 +46,22 @@ class MLService:
             self._load_error = str(exc)
             logger.error("Failed to initialize AccidentPredictor: %s", exc, exc_info=True)
             self._predictor = None
+
+    @staticmethod
+    def _apply_sklearn_compat_shim() -> None:
+        """
+        Ensures scikit-learn 1.6.x pickled ColumnTransformer artifacts (which reference
+        _RemainderColsList) can be unpickled cleanly across scikit-learn 1.6.x, 1.7.x, and 1.8+/1.9+.
+        """
+        try:
+            import sklearn.compose._column_transformer as _ct
+            if not hasattr(_ct, "_RemainderColsList"):
+                class _RemainderColsList(list):
+                    pass
+                _RemainderColsList.__module__ = "sklearn.compose._column_transformer"
+                setattr(_ct, "_RemainderColsList", _RemainderColsList)
+        except Exception as shim_exc:
+            logger.debug("scikit-learn compatibility shim skipped: %s", shim_exc)
 
     @property
     def is_available(self) -> bool:

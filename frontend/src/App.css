@@ -182,6 +182,27 @@ button {
   box-shadow: 0 0 9px #22c55e;
 }
 
+.status-dot.dot-disconnected {
+  background: #ef4444;
+  box-shadow: 0 0 9px #ef4444;
+}
+
+.system-status.status-disconnected,
+.live-indicator.status-disconnected {
+  color: #f87171;
+}
+
+.live-indicator.status-disconnected {
+  background: rgba(127, 29, 29, 0.35);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.sidebar-bottom.status-disconnected {
+  background: rgba(127, 29, 29, 0.3);
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #f87171;
+}
+
 .notification-button {
   position: relative;
   border: none;
