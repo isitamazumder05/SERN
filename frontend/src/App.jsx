@@ -8,6 +8,7 @@ import "./LoginPage.css";
 import ForgotPasswordPage from "./ForgotPasswordPage";
 import ProfilePage from "./ProfilePage";
 import "./ProfilePage.css";
+import AnalyticsPage from "./AnalyticsPage";
 import EmergencyMap from "./components/EmergencyMap";
 import AccidentSimulatorModal from "./components/AccidentSimulatorModal";
 import AddAmbulanceModal from "./components/AddAmbulanceModal";
@@ -23,7 +24,7 @@ import {
   Car, Clock, LayoutDashboard, MapPin, Menu,
   ShieldCheck, Siren, Users, X, Sun, Moon,
   Play, Plus, RefreshCw, CheckCircle2,
-  Phone, Compass, ShieldAlert, LogOut, RotateCcw
+  Phone, Compass, ShieldAlert, LogOut, RotateCcw, BarChart3
 } from "lucide-react";
 import "./App.css";
 
@@ -33,6 +34,7 @@ const menuItems = [
   { name: "Ambulances", icon: Ambulance },
   { name: "Emergency History", icon: Clock },
   { name: "Hospitals", icon: Building2 },
+  { name: "Analytics", icon: BarChart3 },
   { name: "Profile", icon: Users },
 ];
 
@@ -1225,6 +1227,14 @@ function App() {
                 })}
               </div>
             </section>
+          ) : activePage === "Analytics" ? (
+            <AnalyticsPage
+              accidents={accidents}
+              emergencies={emergencies}
+              ambulances={ambulances}
+              hospitals={hospitals}
+              notifications={notifications}
+            />
           ) : activePage === "Profile" ? (
             <ProfilePage
               currentUser={currentUser}
